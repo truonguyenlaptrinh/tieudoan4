@@ -1,2 +1,4 @@
-// Điền URL dự án và khóa publishable/anon công khai của cùng dự án app.js.
-window.MEDIA_CONFIG = {url:'', key:''};
+window.MEDIA_CONFIG = {
+    url: 'https://hnvgvhjpklofwetnielp.supabase.co',
+    key: 'sb_publishable_ztB3UVzsbZHhx4V2I0vMQw_-G5NrgXG'
+};
