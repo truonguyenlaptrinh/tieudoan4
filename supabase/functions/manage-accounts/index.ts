@@ -1,21 +1,3 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
-const cors = {'Access-Control-Allow-Origin':'https://truonguyenlaptrinh.github.io','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
-const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
-Deno.serve(async(req)=>{
- if(req.method==='OPTIONS')return new Response(null,{headers:cors});
- if(req.method!=='POST')return reply({error:'Method not allowed'},405);
- try {
- const token=req.headers.get('Authorization'); if(!token)return reply({error:'Chưa đăng nhập'},401);
- const url=Deno.env.get('SUPABASE_URL')!, anon=Deno.env.get('SUPABASE_ANON_KEY')!, secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
- const userClient=createClient(url,anon,{global:{headers:{Authorization:token}},auth:{persistSession:false}});
- const {data:u,error:ue}=await userClient.auth.getUser(); if(ue||!u.user)return reply({error:'Phiên đăng nhập không hợp lệ'},401);
- const {data:allowed,error:ae}=await userClient.rpc('account_is_admin'); if(ae||!allowed)return reply({error:'Không có quyền quản lý tài khoản'},403);
- const admin=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}});
- const body=await req.json();
- if(body.action==='list') {const page=Math.max(1,Number(body.page)||1);const {data,error}=await admin.auth.admin.listUsers({page,perPage:50});if(error)return reply({error:error.message},400);return reply({users:data.users.map(x=>({id:x.id,email:x.email,created_at:x.created_at})),more:data.users.length===50});}
- if(body.action!=='create')return reply({error:'Thao tác không hợp lệ'},400);
- const email=String(body.email||'').trim(), password=String(body.password||'');
- if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12||password.length>72)return reply({error:'Email hợp lệ và mật khẩu 12–72 ký tự là bắt buộc'},400);
- const {data,error}=await admin.auth.admin.createUser({email,password,email_confirm:false});if(error)return reply({error:error.message},400);return reply({id:data.user.id});
- }catch{return reply({error:'Không xử lý được yêu cầu'},500)}
-});
+import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
+const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Content-Type':'application/json'};
+Deno.serve(async req=>{const reply=(x:unknown,status=200)=>new Response(JSON.stringify(x),{status,headers:cors});if(req.method==='OPTIONS')return new Response(null,{headers:cors});try{const url=Deno.env.get('SUPABASE_URL')!, key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;const c=createClient(url,key);const token=req.headers.get('Authorization')?.replace(/^Bearer /i,'');if(!token)return reply({error:'Unauthorized'},401);const {data:{user},error}=await c.auth.getUser(token);if(error||!user)return reply({error:'Unauthorized'},401);const a=await c.from('account_admins').select('uid').eq('uid',user.id).maybeSingle();if(a.error||!a.data)return reply({error:'Forbidden'},403);const b=await req.json();const check=(r:any)=>{if(r.error)throw r.error;return r.data};if(b.action==='list'){const members=check(await c.from('v29_members').select('*'));const profiles=check(await c.from('profiles').select('id,full_name'));return reply({members:members.map((m:any)=>({...m,full_name:profiles.find((p:any)=>p.id===m.uid)?.full_name}))});}if(b.action==='create'){if(typeof b.password!=='string'||b.password.length<12||!b.email||!b.full_name)throw Error('Thiếu thông tin hoặc mật khẩu dưới 12 ký tự');const u=check(await c.auth.admin.createUser({email:b.email,password:b.password,email_confirm:false})).user;try{check(await c.from('profiles').upsert({id:u.id,full_name:b.full_name,role:'editor'}));check(await c.from('v29_members').insert({uid:u.id,state:'pending'}));}catch(e){await c.auth.admin.deleteUser(u.id);throw e}return reply({ok:true});}if(b.action==='state'&&['active','locked','pending'].includes(b.state)){if(b.uid===user.id)throw Error('Không thay đổi admin');const m=check(await c.from('v29_members').select('uid').eq('uid',b.uid).single());if(b.state==='active')check(await c.auth.admin.updateUserById(m.uid,{email_confirm:true}));check(await c.from('v29_members').update({state:b.state}).eq('uid',m.uid));return reply({ok:true});}return reply({error:'Invalid action'},400)}catch(e){return reply({error:String(e?.message||e)},400)}});
